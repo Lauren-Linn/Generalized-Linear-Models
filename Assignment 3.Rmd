@@ -1,0 +1,320 @@
+---
+title: "Assignment 3"
+author: "Hsin-Wen Lin"
+date: "2023-10-25"
+output: pdf_document
+---
+
+## **Question 1** ##
+
+### (a)
+```{r echo=TRUE, fig.height=3, fig.width=5, message=FALSE, warning=FALSE}
+library(tidyverse)
+doc_visits <- read_csv(here::here("data", "doc_visits.csv")) %>% janitor::clean_names()
+
+# Visualize the distribution of number of doctor visits
+library(ggplot2)
+ggplot(doc_visits) + geom_bar(aes(x = doc_visits))
+ggplot(doc_visits, aes(x = doc_visits)) + geom_histogram() + facet_grid(cols = vars(age50))
+```
+
+It can be seen from the first histogram that there is a very high zero frequency in this data. According to the histogram of number of doctor visits, by age50 variable, there is a clear indication that the age of German male individuals lower than 50 almost always generates zero counts. Hence, we should consider zero-inflated models in this case.
+
+
+
+### (b)
+```{r echo=TRUE, fig.height=3, fig.width=5, message=FALSE, warning=FALSE, paged.print=FALSE}
+GGally::ggpairs(doc_visits %>% select(-c(doc_visits, age50))) + theme_minimal()
+
+doc_visits %>% ggplot(aes(x = age50, y = doc_visits)) + geom_boxplot() +
+  coord_flip() + theme_minimal()
+```
+
+According to the pairplot, we can see that the distribution of health is right-skewed, while schooling is left-skewed. From the boxplots, the age of German male individuals greater than 50 visit doctors slightly more often.
+
+<br>
+
+Since the correlation between health and schooling is less than 0.3, we do not need to consider the multicollinearity problem.
+
+
+```{r echo=TRUE, fig.height=3, fig.width=5, message=FALSE, warning=FALSE}
+library(gamlss)
+zip <- gamlss(doc_visits ~ ., formula.sigma = ~ 1, family = ZIP, data = doc_visits)
+zip.best <- stepGAIC(zip, direction = "backward")
+
+zinb <- gamlss(doc_visits ~ ., formula.sigma = ~ 1, family = ZINBI, data = doc_visits)
+zinb.best <- stepGAIC(zinb, direction = "backward")
+
+summary(zinb.best)
+```
+To choose the best model, I made the model selection by stepGAIC function with a backward direction in both ZIP and ZINB models. This will iteratively eliminate the least significant explanatory variables based on the AIC value until it gets the minimum one. After getting the minimum AIC value within the two models, we can see that the AIC value of the ZINB model is lower than the ZIP model, showing that it has a better fit. Thus, I chose the ZINB model as my final model. 
+
+<br>
+
+The fitted model is
+$$ Y_i \sim \text{ZINB}(\mu_i, \sigma, \pi_i) \qquad  \text{independently, for } i=1,...,300 $$
+$$ log\,\hat\mu_i = \beta_0 + \beta_1\,x_{i1} + \beta_2\,x_{i2} = 2.56961 - 0.26623\,x_{i1} + 0.42067\,x_{i2}$$
+$$ log\frac{\hat\pi_i}{1-\hat\pi_i} = \gamma_0 = -36.04 $$
+$$ \hat\sigma = exp(0.2165) = 1.2417 $$
+$$ \hat\pi_i = \frac{\text{exp}(1.2417)}{1+ \text{exp}(1.2417)} \approx 0.7759 $$
+
+
+where 
+$$ Y_i = \text{number of doctor visits for the } i \text{ German male individuals in last 3 months} $$
+$$ x_{i1} = \text{the health satisfaction score of the } i \text{ German male individuals} $$
+\[x_{i2} = \begin{cases}
+    TRUE & \text{if age of German male individuals } i \text{ is greater than 50} \\
+    FALSE & \text{otherwise}
+\end{cases}\] 
+
+
+- The multiplicative effect on mean number of doctor visits of an increase of one unit in health satisfaction score is $e^{-0.26623}=0.7663$, a 23.37% decrease.
+
+- The effect on the mean number of doctor visits, of German male individuals age greater than 50, is $e^{0.42067}=1.523$. Thus, German male individuals aged greater than 50 increased the expected number of doctor visits by 52.3%, amongst German male individuals aged less than 50.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(zinb.best)
+```
+Based on the Normal Q-Q plot in the model diagnostic plot, the data points follow a straight line, indicating that quantile residuals are approximately normally distributed. Therefore, we can conclude that the model provided a good fit to the data.
+
+
+
+
+## **Question 2** ##
+
+### (a)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Import data and create AIS code column based on Head Injury Criterion 
+crash <- read_csv(here::here("data", "crash.csv")) %>% janitor::clean_names() 
+crash <- crash %>% mutate(ais = case_when(crash$head_ic >= 135 & crash$head_ic <= 519 ~ "1",
+         crash$head_ic >= 520 & crash$head_ic <= 899 ~ "2", 
+         crash$head_ic >= 900 & crash$head_ic <= 1254 ~ "3",
+         crash$head_ic >= 1255 & crash$head_ic <= 1574 ~ "4", 
+         crash$head_ic >= 1575 & crash$head_ic <= 1859 ~ "5", crash$head_ic > 1860 ~ "6", TRUE ~ NA))
+(tab <- crash %>% janitor::tabyl(ais))   # Frequency table
+crash$ais[crash$ais == "5" | crash$ais == "6"] <- "5 or 6"
+(tab <- crash %>% janitor::tabyl(ais))
+```
+We can see from the frequency table that there are 12 missing values in the AIS code column, which might caused by dummies with Head Injury Criterion (HIC) values below 135 or were not affected by the crash. Hence, I will leave them in the dataset without further manipulation, which my model will automatically ignore in the next step. In addition, since the categories of AIS codes 5 and 6 are less than 20 observations, I combined them into one category.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(crash) + geom_boxplot(aes(y = weight, group = ais)) + labs(x = "AIS code")
+
+library(vcd)
+mosaicplot(table(crash$dp, crash$ais), main = "AIS code vs dp")
+```
+We can see from the boxplot that crashed cars having higher AIS codes have greater weight. In addition, the mosaic plot shows that cars containing dummies in the driver seat lead to greater AIS code compared to cars containing dummies in the front passenger seat.
+
+
+
+### (b)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(VGAM)
+model1 <- vglm(ordered(ais) ~ dp + weight, family = cumulative(parallel = TRUE), data = crash)
+summary(model1)
+```
+The cumulative proportional odds model is:
+$$ ln(\frac{\gamma_{ji}}{1-\gamma_{ji}}) = \alpha_j + \beta_1\,x_{i1} + \beta_2\,x_{i2} \qquad i=1,...,352\,;\,  j=1,2,3,4 $$
+where 
+$$ \gamma_{ji} = \text{the cumulative probabilities } \gamma_j \text{ for observation } i $$
+$$\alpha_j = \text{intercept terms that depend only on the AIS code} $$
+$$ x_{i1} = \begin{cases}
+    Driver & \text{if the dummy of car } i \text{ is in the driver seat} \\
+    Passen & \text{if the dummy of car } i \text{ is in the passenger seat}
+\end{cases} $$
+$$ x_{i2} = \text{car } i \text{'s weight (pounds)} $$
+The estimated model equations are:
+$$ j = 1: \qquad ln(\frac{\hat\gamma_{1i}}{1-\hat\gamma_{1i}}) = -0.783865 + 0.868565\,x_{i1} - 0.000436\,x_{i2} $$
+
+- dp ($\beta_1$): The ratio of the cumulative odds of being in AIS code group j, of cars containing dummies in the passenger versus driver seat, of the same weight, is $e^{\hat\beta_1}=e^{0.868565}=2.383$. This implies that, for any AIS code group $j=1,2,3,4$ the odds of being in group $\leq\,j$ for the dummy in the passenger seat is 2.38 times the odds of being in group $\leq\,j$ for the dummy in the driver seat, for cars of the same weight, which is an increase in the odds of 138%. This indicates that cars containing the dummy in the passenger seat have a greater AIS code than in the driver seat.
+
+- weight ($\beta_2$): The ratio of the cumulative odds of being in AIS code group j, of a car of weight $x+1$, compared with a car of weight $x$, of the same dp, is $e^{\hat\beta_2}=e^{-0.000436}=0.9996$. This shows that for any AIS code group $j=1,2,3,4$, the odds of being in group $\leq\,j$ for a car of weight $x+1$ is 0.9996 times the odds of being in group $\leq\,j$ for a car of weight $x$, for cars of the same value of dp variable. Hence, for every increasing pound of weight. there is a less than 1% reduction in the odds of being in AIS code group $\leq\,j$, for $j=1,2,3,4$.
+
+
+
+### (c)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+model2 <- vglm(ais ~ dp + weight, family = multinomial(refLevel = "1"), data = crash)
+summary(model2)
+```
+
+*Outcome 1: AIS code = 2*
+$$ ln[\frac{\pi_{2i}}{\pi_{1i}}] = \alpha_2 + \beta_{21}\,x_{i1} + \beta_{22}\,x_{i2} = 2.120428 - 0.501047\,x_{i1} - 0.000318\,x_{i2} \qquad i=1,...,352 $$
+where
+$$ \frac{\pi_{2i}}{\pi_{1i}} = \text{the odds of AIS code being 2 relative to the reference category(AIS code = 1)} $$
+$$ x_{i1} = \begin{cases}
+    Driver & \text{if the dummy of car } i \text{ is in the driver seat} \\
+    Passen & \text{if the dummy of car } i \text{ is in the passenger seat}
+\end{cases} $$
+$$ x_{i2} = \text{car } i \text{'s weight (pounds)} $$
+
+- The effect on the odds of unconscious less than 1 hour(AIS code = 2), relative to headache or dizziness(AIS code = 1), of containing dummies in the passenger seat compared with the driver seat, is $e^{-0.501047} = 0.6059$, indicating a 39.41% decrease in the odds of unconsciousness for less than 1 hour.
+
+- The effect on the odds of unconscious less than 1 hour(AIS code = 2), relative to headache or dizziness(AIS code = 1), of a one-pound increase in car weight, is $e^{-0.000318} = 0.9997$. Hence, there is a 0.03% decrease in the odds of unconsciousness for less than 1 hour with every increasing pound of weight.
+
+
+
+## **Question 3** ##
+
+### (a)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+load(here::here("data", "data.child.RData"))
+ggplot(data.child, aes(x = factor(Visit), y = Ht, fill = Sex)) + geom_boxplot(show.legend = FALSE) +
+  facet_grid(cols = vars(factor(Sex)))
+```
+Based on the boxplot, the record of children's height from Westmead Children’s Hospital shows that females are taller than males at a similar age. 
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(geepack)
+model_ex <- geeglm(Ht ~ Agedays + factor(Sex), id = Id, corstr = "exchangeable", data = data.child)
+summary(model_ex)
+anova(model_ex)
+```
+
+According to the p-value from anova, we can see that both age in days and sex are significant.
+
+
+
+### (b)
+
+The assumption of this model is the response variable follows a Gaussian or normal distribution.
+
+
+### (c)
+The fitted model is
+$$ \hat\mu_{ij} = 66.41754 + 0.04508\,x_{ij1} + 1.5364\,x_{i2} \qquad i=1,...,602\, ;\, j= 1,...,7$$
+where 
+$$ \hat\mu_{ij} = \text{The mean of the } i \text{th Children’s heights at } j \text{th visit} $$
+$$ x_{ij1} = \text{Children } i \text{'s age in days at } j \text{th visit} $$
+$$ x_{i2} = \begin{cases}
+    0 & \text{if children } i \text{ is male} \\
+    1 & \text{if children } i \text{ is female}
+\end{cases} $$
+
+
+### (d)
+
+The estimated serial correlation parameter is $\hat\rho=0.2055$ so the estimated correlation matrix:
+$$
+\begin{bmatrix}
+1 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 \\
+0.2055 & 1 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 \\
+0.2055 & 0.2055 & 1 & 0.2055 & 0.2055 & 0.2055 & 0.2055 \\
+0.2055 & 0.2055 & 0.2055 & 1 & 0.2055 & 0.2055 & 0.2055 \\
+0.2055 & 0.2055 & 0.2055 & 0.2055 & 1  & 0.2055 & 0.2055 \\
+0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 1 & 0.2055 \\
+0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 0.2055 & 1
+\end{bmatrix}
+$$
+
+
+### (e)
+
+- Sex: Children being female is associated with an increase of 1.5364, the mean of their heights (in cm) compared with being male, assuming the children's age in days is constant.
+
+- Age: A one-day increase in children’s age in days is associated with an increase of 0.04508, the mean of children’s heights (in cm).
+
+
+### (f)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+model_ar <- geeglm(Ht ~ Agedays + factor(Sex), id = Id, corstr = "ar1", data = data.child)
+QIC(model_ex, model_ar)
+```
+
+In this case, I think the AR(1) correlation might be appropriate since the children's heights were recorded over time, indicating that the latest record would highly correlate to the previous one compared to others. 
+
+<br>
+
+However, by checking the QIC value, which is used to select a correlation structure, it can be seen that changing the working correlation matrix to AR(1) did not improve the model fit. As a result, I kept the correlation matrix with an exchangeable one and used it as my final model.
+
+
+
+### (g)
+$$ Y_{ij}\,|\,b_{0i} = b_{0i} + \beta_1\,x_{ij1} + \beta_2\,x_{i2} + \epsilon_{ij} $$
+$$\qquad i=1,...,602\, ;\, j= 1,...,7$$
+$$ b_{0i} \sim N(\beta_0, \nu^2),\, \text{ independently of }\epsilon_{ij} \sim N(0, \tau^2) $$
+where
+$$ Y_{ij} = \text{Children } i \text{'s heights at } j \text{th visit} $$
+
+$$ x_{ij1} = \text{Children } i \text{'s age in days at } j \text{th visit} $$
+$$ x_{i2} = \begin{cases}
+    0 & \text{if children } i \text{ is male} \\
+    1 & \text{if children } i \text{ is female}
+\end{cases} $$
+
+
+
+### (h)
+From the random intercept model:
+$$ Y_{ij} = \beta_{0} + \beta_1\,x_{ij1} + \beta_2\,x_{ij2} + b_i + \epsilon_{ij} = \mu_{ij} + b_i + \epsilon_{ij} $$
+$$ Var(Y_{ij}) = Var(b_i) + Var(\epsilon_{ij}) = \nu^2 + \tau^2 $$
+$$ \begin{aligned}
+Cov(Y_{ij},\,Y_{ik}) &= E[(Y_{ij}-\mu_{ij})(Y_{ik}-\mu_{ik})]= E[Y_{ij}\,Y_{ik}] - \mu_{ij}\,\mu_{ik} \\
+&= E[(\mu_{ij} + b_i + \epsilon_{ij})(\mu_{ik} + b_i + \epsilon_{ik})] - \mu_{ij}\,\mu_{ik} \\
+&= \mu_{ij}\,\mu_{ik} + E(b_i^2) + 2E(b_i\epsilon_{ik}) + E(\epsilon_{ij}\epsilon_{ik}) - \mu_{ij}\,\mu_{ik} = \nu^2
+\end{aligned}$$
+
+- $b_i$ and $\epsilon_{ik}$ are independent: $E(b_i\epsilon_{ik})=0$
+
+- $\epsilon_{ij}$ and $\epsilon_{ik}$ are independent: $E(\epsilon_{ij}\epsilon_{ik})=0$
+
+Hence, the variance-covariance matrix of $Y_i$ will be:
+$$ Var(Y_i) = V_i = \begin{bmatrix} \nu^2+\tau^2 & \nu^2 & \dotsb & \nu^2\\ \nu^2 & \nu^2+\tau^2 & \dotsb & \nu^2\\
+\vdots &  & \ddots\\ \nu^2 & \nu^2 & & \nu^2+\tau^2 \end{bmatrix}$$
+
+with correlation matrix:
+$$ R_i = \begin{bmatrix} 1 & \frac{\nu^2}{\nu^2+\tau^2} & \dotsb & \frac{\nu^2}{\nu^2+\tau^2}\\ \frac{\nu^2}{\nu^2+\tau^2} & 1 & \dotsb & \frac{\nu^2}{\nu^2+\tau^2}\\
+\vdots &  & \ddots\\ \frac{\nu^2}{\nu^2+\tau^2} & \frac{\nu^2}{\nu^2+\tau^2} & & 1 \end{bmatrix}$$
+which is exchangeable correlation matrix.
+
+
+
+
+### (i)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(lme4)
+model_lmm <- lmer(Ht ~ Agedays + factor(Sex) + (1 | Id), data = data.child)
+summary(model_lmm)
+```
+
+According to the result from the previous question, we fit the $\nu=1.21$ and $\tau=2.38$, provided from the model output. Thus,
+$$ \rho = \frac{\nu^2}{\nu^2+\tau^2} = \frac{1.21^2}{1.21^2+2.38^2} \approx 0.2054 $$
+and the corresponding correlation matrix:
+$$
+\begin{bmatrix}
+1 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 \\
+0.2054 & 1 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 \\
+0.2054 & 0.2054 & 1 & 0.2054 & 0.2054 & 0.2054 & 0.2054 \\
+0.2054 & 0.2054 & 0.2054 & 1 & 0.2054 & 0.2054 & 0.2054 \\
+0.2054 & 0.2054 & 0.2054 & 0.2054 & 1  & 0.2054 & 0.2054 \\
+0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 1 & 0.2054 \\
+0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 0.2054 & 1
+\end{bmatrix}
+$$
+
+which is similar as the one generated by the marginal GEE model with an exchangeable correlation matrix.
+
+
+
+### (j)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(data.child, aes(x = Agedays, y = Ht)) +
+  geom_smooth(aes(colour = "spline"), method = lm, formula = y ~ splines::bs(x, 6), 
+              se = FALSE,size = 1.5) + geom_point(color = "black") +  
+  scale_color_manual(name = "method", values = c(spline = "indianred1")) + theme_minimal()
+```
+
+
+
+### (k)
+
+According to the scatterplot in the previous question, I do not think linear growth is appropriate since there are gaps between each group of observations. In other words, the linear growth model only captures the mean or median value from each group without capturing the pattern, which has an inadequate fit.
+
+
+### (l)
+In this case, since the range of Agedays is wide, I will consider taking the square root or transforming the age in days into age for the data transformation to reduce the range of the x-axis. Therefore,  we can reduce the noise from the gap without any data point.
+
+

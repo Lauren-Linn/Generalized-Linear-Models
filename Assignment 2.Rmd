@@ -1,0 +1,633 @@
+---
+title: "STAT8111 Assignment 2"
+author: "Hsin-Wen Lin"
+date: "2023-09-22"
+output: pdf_document
+---
+## **Question 1** ##
+
+### (a)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+pbc <- read_csv(here::here("data", "pbc.csv")) %>% janitor::clean_names()
+# Visualize the distribution of serum bilirubin in mg/dl
+pbc %>% select(ser_bilir) %>% summary()
+
+library(ggplot2)
+ggplot(pbc, aes(ser_bilir)) + geom_histogram()
+```
+It can be seen from the histogram that serBilir has a right-skewed distribution with continuous positive data values. Hence, since Gamma and inverse Gaussian response distribution can well address these problems, we can use them in this case.
+
+
+### (b)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Visualize the distribution of alkaline phosphatase and prothrombin time
+library(GGally)
+GGally::ggpairs(pbc %>% select("ser_bilir", "alkaline", "prothrombin"))
+
+# Log transformation
+pbc <- pbc %>% mutate(logalkaline = log(alkaline), logprothrombin = log(prothrombin), 
+                    logserBilir =log(ser_bilir))
+```
+Due to the highly right-skewed distribution in alkaline and prothrombin variables, we can take log or square root transformation to reduce the skewness, enabling the data to become more symmetric. 
+
+
+### (c)
+```{r echo=TRUE, fig.width=10, message=FALSE, warning=FALSE}
+# Check the correlation between covariates and serum bilirubin
+GGally::ggpairs(pbc %>% select("ser_bilir", "age", "albumin", "alkaline", "prothrombin", 
+                               "logalkaline", "logprothrombin"))
+```
+
+- Serum bilirubin has a weak negative relationship with albumin and weak positive relationships with the rest of the covariates.
+
+- Statistically significant relationships between age and albumin, prothrombin, and logprothrombin.
+
+- Statistically significant relationships between albumin and prothrombin, logalkaline, and logprothrombin.
+
+- Statistically significant relationships between alkaline and logprothrombin.
+
+Additionally, there is a strong correlation between alkaline phosphatase, prothrombin time, and their related log transformation, indicating that there exists multicollinearity. Therefore, we should remove one of them when considering multicollinearity, respectively, from the predictors of serBilir.
+
+<br>
+
+As a result, based on the result of statistically significance test shown in the plot, the covariate of albumin, alkaline, prothrombin, logalkaline, and logprothrombin are the potential predictors of ser_bilir.
+
+
+### (d)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# The frequency table for discrete variables
+(tab <- pbc %>% janitor::tabyl(sex))
+(tab <- pbc %>% janitor::tabyl(hepatomegaly))
+(tab <- pbc %>% janitor::tabyl(histologic))
+```
+Based on the R output of frequency tables, in this dataset, it can be seen that 88% of the patients are female, while the number of patients with enlarged livers is similar to the number of patients who do not. Also, we can see that there are over 70% of patients at the third and fourth histologic stages of disease, where the fourth is the most advanced one.
+
+
+### (e)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Check the correlation between discrete covariates and serum bilirubin
+ps <- ggplot(pbc, aes(x = sex, y = ser_bilir)) + geom_boxplot()
+ph <- ggplot(pbc, aes(x = hepatomegaly, y = ser_bilir)) + geom_boxplot()
+phis <- ggplot(pbc, aes(x = factor(histologic), y = ser_bilir)) + geom_boxplot()
+library(gridExtra)
+grid.arrange(ps, ph, phis, ncol = 3)
+```
+
+- We can see from the first box plot that the median values between males and females are similar. Although the variation of females is more significant than males, many more outliers exist.
+
+- The second box plot shows that patients with enlarged livers have greater median values and variation with the response variable than patients without enlarged livers, indicating that it has a broader range of values.
+
+- The last box plot shows that the variation of the histologic stage of the disease increases align with stage, while the median value of stage 4 is more different from stage 1 to stage 3.
+
+Overall, based on significant separation within different categories, hepatomegaly and histologic are likely to be the predictors of serum bilirubin.
+
+<br>
+
+### (f)
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Fit the glm model with each covariate and save their corresponding p-value
+glm_age <- glm(ser_bilir ~ age, family = Gamma(link = "log"), data = pbc) 
+p_age <- summary(glm_age)$coefficients["age", "Pr(>|t|)"]
+
+glm_sex <- glm(ser_bilir ~ sex, family = Gamma(link = "log"), data = pbc)
+p_sex <- summary(glm_sex)$coefficients["sexmale", "Pr(>|t|)"]
+
+glm_hep <- glm(ser_bilir ~ hepatomegaly, family = Gamma(link = "log"), data = pbc)
+p_hep <- summary(glm_hep)$coefficients["hepatomegalyYes", "Pr(>|t|)"]
+
+glm_alb <- glm(ser_bilir ~ albumin, family = Gamma(link = "log"), data = pbc)
+p_alb <- summary(glm_alb)$coefficients["albumin", "Pr(>|t|)"]
+
+glm_alk <- glm(ser_bilir ~ alkaline, family = Gamma(link = "log"), data = pbc)
+p_alk <- summary(glm_alk)$coefficients["alkaline", "Pr(>|t|)"]
+
+glm_pro <- glm(ser_bilir ~ prothrombin, family = Gamma(link = "log"), data = pbc)
+p_pro <- summary(glm_pro)$coefficients["prothrombin", "Pr(>|t|)"]
+
+glm_his <- glm(ser_bilir ~ histologic, family = Gamma(link = "log"), data = pbc)
+p_his <- summary(glm_his)$coefficients["histologic", "Pr(>|t|)"]
+
+glm_logalk <- glm(ser_bilir ~ logalkaline, family = Gamma(link = "log"), data = pbc)
+p_logalk <- summary(glm_logalk)$coefficients["logalkaline", "Pr(>|t|)"]
+
+glm_logpro <- glm(ser_bilir ~ logprothrombin, family = Gamma(link = "log"), data = pbc)
+p_logpro <- summary(glm_logpro)$coefficients["logprothrombin", "Pr(>|t|)"]
+```
+
+
+Single-variable regressions:
+```{r echo=TRUE, message=FALSE, warning=FALSE, results='asis'}
+library(knitr)
+library(kableExtra)
+options("scipen"=100)
+
+# Create a dataframe with all covariates with their corresponding p-value
+p_val <- data.frame(c = c("age","sex", "hepatomegaly", "albumin", "alkaline", "prothrombin", 
+                          "histologic","logalkaline", "logprothrombin"), 
+                    p = c(p_age, p_sex, p_hep, p_alb, p_alk, p_pro, p_his, p_logalk, p_logpro))
+
+# Round the p-value for better interpretation
+p_val$p <- ifelse(p_val$p < 0.0001, "<.0001", round(p_val$p, digits = 4))
+
+kable(p_val, format = "markdown", col.names = c("Covariate", "p-value"))
+```
+
+
+### (g)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Define Gamma distribution with all covariates
+glm_all <- glm(ser_bilir ~ . -age -sex -prothrombin -alkaline -logserBilir, 
+               family = Gamma(link = "log"), data = pbc) 
+
+# Define Gamma distribution with constant
+glm_c <- glm(ser_bilir ~ 1, family = Gamma(link = "log"), data = pbc) 
+
+# Derive final model by step function using  forward model selection
+final_model<-step(glm_c,scope=list(lower=formula(glm_c), upper=formula(glm_all)),direction="forward")
+```
+Since the p-value of age and sex is more significant than 0.2, I remove them from the list of potential predictors. In addition, due to the normality and multicollinearity problem, I removed alkaline and prothrombin variables from the predictors. I obtained my final model by the stepwise function with forward model selection, which will add variables from the set of potential covariates selected above until all of the covariates are added and selecting the model with minimum AIC value. As a result, the AIC value of my final model is 1193.88, the lowest among all.
+
+
+### (h)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Summarize the final model
+summary(final_model)
+```
+
+We specify the Gamma model:
+$$Y_i \sim G(\mu_i, \phi)  \qquad i = 1,...,312$$
+$$log(\mu_i) = \beta_0 + \beta_1\, logx_{i1} + \beta_2x_{i2} + \beta_3\, logx_{i3} + \beta_4x_{i4} $$
+where
+$$ Y_i = \text{serum bilirubin of patient } i \text{ in mg/dl} $$
+$$ \mu_i = \text{the expected value of serum bilirubin of patient } i \text{ in mg/dl} $$
+$$x_{i1} = \text{prothrombin time of patient } i \text{ in seconds}$$
+\[x_{i2} = \begin{cases}
+    No & \text{if patient $i$ does not have enlarged liver} \\
+    Yes & \text{if patient $i$ have enlarged liver}
+\end{cases}\] 
+$$x_{i3} = \text{alkaline phosphatase of patient } i \text{ in U/liter} $$
+$$x_{i4} = \text{the albumin of patient } i \text{ in gm/dl} $$
+
+
+### (i)
+
+The model estimates of final model are
+$$ log(\hat y_i) = -7.99862 + 3.21106\, logx_{i1} + 0.518 x_{i2} + 0.4225\, logx_{i3} - 0.56930 x_{i4} $$
+$$\hat\phi = 0.9603474$$
+
+- A 1 second increase in prothrombin time leads to a 3.21106 mg/dl increase in expected serum bilirubin.
+
+- The multiplicative effect on expected serum bilirubin of a patient having an enlarged liver compared with a patient who does not have is $e^{0.518}\approx1.679$, a 67.9% increase.
+
+- An 1 U/liter increase of alkaline phosphatase leads to a 0.4225 mg/dl increase in expected serum bilirubin.
+
+- The multiplicative effect on expected serum bilirubin of an increase of albumin in gm/dl is $e^{-0.56930}\approx0.566$, a 43.4% decrease.
+
+
+### (j)
+According to the estimated model, we can see that patients with enlarged liver and an increased number of prothrombin time in seconds, alkaline phosphatase in U/liter, and a decreased number of albumin in gm/dl are likely to exhibit elevated levels of serum bilirubin.
+
+
+
+### (k)
+```{r echo=TRUE, fig.width=8, message=FALSE, warning=FALSE}
+# Scaled deviance
+final_model$deviance / summary(final_model)$dispersion
+
+# Diagnostics of deviance residuals
+resdev <- residuals(final_model, type = "deviance")
+library(patchwork)
+p1 <- ggplot() + geom_histogram(aes(x = resdev, y = after_stat(density)), bins = 6) + 
+  geom_density(aes(x = resdev)) + ggtitle("Histogram of deviance residuals")
+p2 <- ggplot() + geom_qq(aes(sample = resdev)) + geom_qq_line(aes(sample = resdev)) + 
+  ggtitle("Normal scores plot of deviance residuals")
+
+# Diagnostics of quantile residuals
+library(DHARMa)
+res_model <- simulateResiduals(fittedModel = final_model)
+q_model <- residuals(res_model, quantileFunction = qnorm)
+p3 <- ggplot(data=tibble(q=q_model), aes(x=q_model)) + 
+  geom_histogram(aes(y=after_stat(density)), bins = 6) +
+  geom_density() + ggtitle("Histogram of quantile residuals")
+p4 <- ggplot(data = tibble(q = q_model), aes(sample = q)) +
+  geom_qq() + geom_qq_line() + ggtitle("Normal scores plot of quantile residuals")
+p1 + p2 + p3 + p4
+
+# DHARMa residual plots
+plot(res_model)
+
+#  partial residual plots
+library(car)
+crPlots(final_model)
+```
+By comparing the value of scaled deviance and degrees of freedom, we can see that the scaled deviance (238.54) is significantly less than the degrees of freedom (307), indicating that the model is adequate.
+
+<br>
+
+We can see from the histogram plots that the distribution of the quantile and deviance residuals is right-skewed. Also, most of the data points in the normal scores plots of deviance and quantile residuals departed from the middle line, indicating non-normality.
+
+<br>
+
+According to DHARMa residual plots, we can see that the results of dispersion and outlier tests in the left panel are "not significant (n.s.)," meaning that there is no significant outliers and dispersion problem in the model, while the KS test is rejected, indicating that the model does not remain overall uniformity. In addition, the right panel shows that the fitted spline deviates significantly from a flat line at the 0.25 and 0.5 quantiles, indicating the lack of fit with the model and the existence of unusual observations.
+
+<br>
+
+Lastly, it can be seen from the partial plot that compared to the broken lines, the solid line of logprothrombin, albumin and  logalkaline are fairly linear, which indicates linearity in the partial relationship.
+
+<br>
+
+### (l)
+```{r fig.width=8, message=FALSE, warning=FALSE, include=FALSE}
+# Fit the glm model with each covariate and save their corresponding p-value
+inv_age <- glm(ser_bilir ~ age, family = inverse.gaussian(link = "log"), data = pbc) 
+p_age_inv <- summary(inv_age)$coefficients["age", "Pr(>|t|)"]
+
+inv_sex <- glm(ser_bilir ~ sex, family = inverse.gaussian(link = "log"), data = pbc)
+p_sex_inv <- summary(inv_sex)$coefficients["sexmale", "Pr(>|t|)"]
+
+inv_hep <- glm(ser_bilir ~ hepatomegaly, family = inverse.gaussian(link = "log"), data = pbc)
+p_hep_inv <- summary(inv_hep)$coefficients["hepatomegalyYes", "Pr(>|t|)"]
+
+inv_alb <- glm(ser_bilir ~ albumin, family = inverse.gaussian(link = "log"), data = pbc)
+p_alb_inv <- summary(inv_alb)$coefficients["albumin", "Pr(>|t|)"]
+
+inv_alk <- glm(ser_bilir ~ alkaline, family = inverse.gaussian(link = "log"), data = pbc)
+p_alk_inv <- summary(inv_alk)$coefficients["alkaline", "Pr(>|t|)"]
+
+inv_pro <- glm(ser_bilir ~ prothrombin, family = inverse.gaussian(link = "log"), data = pbc)
+p_pro_inv <- summary(inv_pro)$coefficients["prothrombin", "Pr(>|t|)"]
+
+inv_his <- glm(ser_bilir ~ histologic, family = inverse.gaussian(link = "log"), data = pbc)
+p_his_inv <- summary(inv_his)$coefficients["histologic", "Pr(>|t|)"]
+
+inv_logalk <- glm(ser_bilir ~ logalkaline, family = inverse.gaussian(link = "log"), data = pbc)
+p_logalk_inv <- summary(inv_logalk)$coefficients["logalkaline", "Pr(>|t|)"]
+
+inv_logpro <- glm(ser_bilir ~ logprothrombin, family = inverse.gaussian(link = "log"), data = pbc)
+p_logpro_inv <- summary(inv_logpro)$coefficients["logprothrombin", "Pr(>|t|)"]
+```
+
+```{r echo=TRUE, fig.width=8, message=FALSE, warning=FALSE}
+# Replace p-value with the one generated by inverse gaussian
+p_val_inv <- p_val
+new_p = c(p_age_inv, p_sex_inv, p_hep_inv, p_alb_inv, p_alk_inv, p_pro_inv, p_his_inv, 
+          p_logalk_inv, p_logpro_inv)
+p_val_inv$p <- new_p
+p_val_inv$p <- ifelse(p_val_inv$p < 0.0001, "<.0001", round(p_val_inv$p, digits = 4))
+kable(p_val_inv, format = "markdown", col.names = c("Covariate", "p-value"))
+
+# Define Gamma distribution with constant and all covariates, respectively
+glm_c_inv <- glm(ser_bilir ~ 1, family=inverse.gaussian(link = "log"), data = pbc) 
+glm_all_inv <- glm(ser_bilir ~  . -age -sex -prothrombin -alkaline -logserBilir, 
+                   family = inverse.gaussian(link = "log"), data = pbc) 
+
+# Derive final model by step function using forward model selection
+final_model_inv <- step(glm_c_inv,
+                        scope = list(lower = formula(glm_c_inv), upper = formula(glm_all_inv)),
+                        direction = "forward")
+summary(final_model_inv)
+
+# Scaled deviance
+final_model_inv$deviance / summary(final_model_inv)$dispersion
+
+# Diagnostics of deviance residuals
+resdev_inv <- residuals(final_model_inv, type = "deviance")
+p5 <- ggplot() + geom_histogram(aes(x = resdev_inv, y = after_stat(density)), bins = 6) + 
+  geom_density(aes(x = resdev_inv)) + ggtitle("Histogram of deviance residuals")
+p6 <- ggplot() + geom_qq(aes(sample = resdev_inv)) + geom_qq_line(aes(sample = resdev_inv)) + 
+  ggtitle("Normal scores plot of deviance residuals")
+
+# Diagnostics of quantile residuals
+library(SuppDists)
+res_model_inv <- simulateResiduals(fittedModel = final_model_inv)
+q_model <- residuals(res_model_inv, quantileFunction = qnorm)
+p7<-ggplot(data = tibble(q = q_model), aes(x = q_model)) + 
+  geom_histogram(aes(y = after_stat(density)), bins = 6) +
+  geom_density() + ggtitle("Histogram of quantile residuals")
+p8<-ggplot(data = tibble(q = q_model), aes(sample = q)) + geom_qq() + 
+  geom_qq_line() + ggtitle("Normal scores plot of quantile residuals")
+p5 + p6 + p7 + p8
+
+# DHARMa residual plots
+plot(res_model_inv)
+
+# Partial residual plots
+crPlots(final_model_inv)
+```
+
+Under the significance level 20% and the consideration of normality, I removed age, sex, alkaline and prothrombin variables from the list of potential predictors. As a result, the predictor of my final model involves hepatomegaly, logprothrombin, logalkaline, albumin and histologic, with 1112.21 as the AIC value.
+
+<br>
+
+<br>
+
+Since the scaled deviance (265.9984) is less than the degrees of freedom (306), the model with an inverse Gaussian response distribution is adequate.
+
+<br>
+
+The histogram plots show the distribution of deviance and quantile residuals are nearly bell-shaped. The normal scores plots also show that both residuals are normally distributed. 
+
+<br>
+
+It can be seen from the DHARMa residual plots that the results of all the tests in the left panel are not significant (n.s.), indicating that under the significance level of 5%, there is no uniformity, outliers, and dispersion problem within the model. In addition, the right panel shows that all 0.25, 0.5, and 0.75 quantiles residuals against predicted values do not have outliers. Finally, the partial plot shows that all the continuous covariates are linear compared to the broken line.
+
+
+## **Question 2** ##
+
+### (a)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+hd <- read_csv(here::here("data", "Heart_Disease.csv"))
+
+ggplot(hd) + geom_bar(aes(x= ER_visits, y = after_stat(count)/sum(after_stat(count))))+
+geom_pointrange(aes(x = ER_visits,
+y = dpois(ER_visits, mean(ER_visits)),
+ymin = 0, ymax = dpois(ER_visits, mean(ER_visits))),
+colour = "red") +
+labs(title = "Number of emergency room visits with Poisson fit", y = "Probability")
+```
+We can see that the number of emergency room visits is less concentrated than a Poisson fit, which is a sign of overdispersion.
+
+
+
+### (b)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+ggpairs(hd[, c("ER_visits", "Age", "Total_Cost", "Comorbidities")])
+
+# To prevent negative infinity, add 1 to the denominator
+hd <- hd %>% mutate(logtotal_cost=log(Total_Cost+1), logcomorbidities=log(Comorbidities+1))
+```
+We can see from the distribution that Total_Cost and Comorbidities variables have extreme skewness, indicating that they are unlikely to have a linear relationship with the response variable. Therefore, we should consider taking data transformations, such as square roots or logs, enabling their distribution to be more symmetric.
+
+<br>
+
+In contrast, although ER_visits and Age variables are right and left-skewed,  they still have a roughly symmetric distribution so they do not need transformation.
+
+
+### (c)
+```{r echo=TRUE, fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
+hd_new <- hd[, -which(names(hd) == 'ID')]
+ggpairs(hd_new)
+```
+According to the correlation between the response variable and covariates:
+
+- The number of emergency room visits has positive relationships with all the covariates, while it has the highest correlation coefficient with the number of tracked drugs prescribed.
+
+- There are statistically significant relationships between ER_visits and all covariates, excluding age, comorbidities, and logcomorbidities variables.
+
+<br>
+
+Correlation between covariates:
+
+- Total_Cost, Interventions, and logtotal_cost: Having statistically significant relationships with other covariates, excluding age and gender.
+
+- Age: Statistically significant relationships with comorbidities, duration, and logcomorbidities.
+
+- Drug: In addition to Total_Cost, Interventions, and logtotal_cost, it has statistically significant relationships with complications. 
+
+- Duration: In addition to the relationships mentioned above, it has statistically significant associations with complications and comorbidities variables
+
+- Strong correlation between the comorbidities variable and its log term, so we should remove one from the regression.
+
+According to the statistically significance test shown in the plot, the number of total cost of claims, gender, interventions, drug, complications, duration, and the log of total cost of claims are likely to be the predictors of the number of emergency room visits.
+
+
+### (d)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+glm_drug <- glm(ER_visits ~ Drug, family = poisson, data = hd)
+summary(glm_drug)
+```
+It can be seen that the residual deviance of 1169.5 is significantly greater than 786, the degrees of freedom. As a result, under this condition, it cannot be explained by adding more covariates and further indicates the occurrence of overdispersion. Therefore, the Poisson model might not be the most appropriate model selection.
+
+<br>
+
+To deal with the existence of overdispersion, we can consider taking the negative binomial as our alternative model. It can be used for modeling counts when the deviance for the Poisson distribution is excessively large, indicating overdispersion happens. Under its permanent property of $Var(Y)>E(Y)$, we can fit it with overdispersed data since they also have more significant variation than expected.
+
+
+### (e)
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(MASS)
+glm_to <- glm.nb(ER_visits ~ Total_Cost, link = log, data = hd)
+p_to <- summary(glm_to)$coefficients["Total_Cost", "Pr(>|z|)"]
+
+glm_Age <- glm.nb(ER_visits ~ Age, link = log, data = hd)
+p_Age <- summary(glm_Age)$coefficients["Age", "Pr(>|z|)"]
+
+glm_gen <- glm.nb(ER_visits ~ Gender, link = log, data = hd)
+p_gen <- summary(glm_gen)$coefficients["Gender", "Pr(>|z|)"]
+
+glm_int <- glm.nb(ER_visits ~ Interventions, link = log, data = hd)
+p_int <- summary(glm_int)$coefficients["Interventions", "Pr(>|z|)"]
+
+glm_drug <- glm.nb(ER_visits ~ Drug, link = log, data = hd)
+p_drug <- summary(glm_drug)$coefficients["Drug", "Pr(>|z|)"]
+
+glm_comp <- glm.nb(ER_visits ~ Complications, link = log, data = hd)
+p_comp <- summary(glm_comp)$coefficients["Complications", "Pr(>|z|)"]
+
+glm_com <- glm.nb(ER_visits ~ Comorbidities, link = log, data = hd)
+p_com <- summary(glm_com)$coefficients["Comorbidities", "Pr(>|z|)"]
+
+glm_du <- glm.nb(ER_visits ~ Duration, link = log, data = hd)
+p_du <- summary(glm_du)$coefficients["Duration", "Pr(>|z|)"]
+
+glm_logto <- glm.nb(ER_visits ~ logtotal_cost, link = log, data = hd)
+p_logto <- summary(glm_logto)$coefficients["logtotal_cost", "Pr(>|z|)"]
+
+glm_logcoom <- glm.nb(ER_visits ~ logcomorbidities, link = log, data = hd)
+p_logcom <- summary(glm_logcoom)$coefficients["logcomorbidities", "Pr(>|z|)"]
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Create a dataframe with all covariates with their corresponding p-value
+p_val_nb <- data.frame(c = c("Total_Cost","Age","Gender","Interventions","Drug","Complications",
+                             "Comorbidities","Duration","logtotal_cost","logcomorbidities"),
+p = c(p_to, p_Age, p_gen, p_int, p_drug, p_comp, p_com, p_du, p_logto,p_logcom))
+
+# Round the p-value for better interpretation
+p_val_nb$p <- ifelse(p_val_nb$p < 0.0001, "<.0001", round(p_val_nb$p, digits = 4))
+kable(p_val_nb, format = "markdown", col.names = c("Covariate", "p-value"))
+```
+
+<br>
+
+### (f)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Define model with all variables
+glm_all_nb <- glm.nb(ER_visits ~ Age + factor(Gender) + Interventions + Drug + Complications + Duration + logtotal_cost,
+                     link = log, data = hd)
+
+# Derive final model by step function using backward model selection
+final_model_nb <- step(glm_all_nb, direction = "backward")
+```
+Under a 20% significance level, we remove Comorbidities and logcomorbidities from the predictors' list. In addition, by considering normality, I will remove Total_Cost from the predictors and keep its log term. Eventually, after listing the potential predictors, I made the model selection by stepwise function with a backward direction, which will iteratively eliminate the least significant explanatory variables based on the AIC value until it got the minimum one, which is 3235.56 in this case.
+
+
+### (g)
+
+We specify the Negative Binomial model:
+$$ Y_i \sim \text{NB}(\mu_i, \sigma) \qquad  i=1,...,788 $$        
+$$ log(\mu_i) = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3x_{i3} + \beta_4 x_{i4} + \beta_5\, logx_{i5} $$
+where
+$$ Y_i = \text{the number of emergency room visits by subscriber } i $$
+$$ \mu_i = \text{the mean number of emergency room visits by subscriber } i $$
+$$ x_{i1} = \text{the age of subscriber } i $$
+\[x_{i2} = \begin{cases}
+    1 & \text{if subscriber } i \text{ is male} \\
+    0 & \text{otherwise}
+\end{cases}\] 
+$$ x_{i3} = \text{the total number of interventions or procedures carried out by } \text{subscriber } i $$
+$$ x_{i4} = \text{the number of tracked drugs prescribed by subscriber } i $$
+$$ x_{i5} = \text{total cost of claims by } \text{subscriber } i \text{ in dollars} $$ 
+
+
+
+
+### (h)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+summary(final_model_nb)
+```
+$$\hat \sigma=11.81$$
+
+The model estimates of final model are
+$$ log(\hat y_i) = 0.146878 + 0.007005 x_{i1} + 0.182120 x_{i2} + 0.014745 x_{i3} + 0.214472 x_{i4} + 0.063225\, logx_{i5} $$
+
+- The multiplicative effect on expected number of emergency room visits of an increase of one year in age is $e^{0.007005}=1.007$, a 0.7% increase.
+
+- The multiplicative effect on expected number of emergency room visits of being male compared with other genders is $e^{0.182120}=1.998$, a 19.98% increase.
+
+- The multiplicative effect on expected number of emergency room visits of an increase of one intervention or procedure carried out is $e^{0.014745}=1.0149$, a 1.49% increase.
+
+- The multiplicative effect on expected number of emergency room visits of an increase of one unit of tracked drugs prescribed is $e^{0.214472}=1.2392$, a 23.92% increase.
+
+- A one-dollar increase in the total cost of claims leads to a 0.063225 number of expected emergency room visits.
+
+
+
+### (i)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Diagnostics of deviance residuals
+resdev_nb <- residuals(final_model_nb, type = "deviance")
+p9 <- ggplot() + geom_histogram(aes(x = resdev_nb, y = after_stat(density)), bins = 6) +
+geom_density(aes(x = resdev_nb)) + ggtitle("Histogram of deviance residuals")
+p10 <- ggplot() + geom_qq(aes(sample = resdev_nb)) + geom_qq_line(aes(sample = resdev_nb)) +
+ggtitle("Normal scores plot of deviance residuals")
+
+# Diagnostics of quantile residuals
+res_model_nb <- simulateResiduals(fittedModel = final_model_nb)
+q_model_nb <- residuals(res_model_nb, quantileFunction = qnorm)
+p11 <- ggplot(data=tibble(q=q_model_nb), aes(x=q_model_nb)) + 
+  geom_histogram(aes(y=after_stat(density)), bins = 6) +
+  geom_density() + ggtitle("Histogram of quantile residuals")
+p12 <- ggplot(data = tibble(q = q_model_nb), aes(sample = q)) +
+geom_qq() + geom_qq_line() + ggtitle("Normal scores plot of quantile residuals")
+p9 + p10 + p11 + p12
+
+# DHARMa residual plots
+plot(res_model_nb)
+
+# Partial residual plots
+crPlots(final_model_nb)
+```
+
+The residual deviance of the model is 821.64 on 781 degrees of freedom, which indicates the overdispersion problem.
+
+<br>
+
+We can see from the first plot that although the histogram of deviance residuals shows bimodal, both residuals are normally distributed based on the normal scores plot.  
+
+<br>
+
+The second plot shows no uniformity, outliers, or dispersion problem within the model based on the results of all the tests in the left panel. The plots on the right panel also indicate no unusual observation within 0.25, 0.5, and 0.75 quantiles of the residuals.
+
+<br>
+
+Lastly, compared to the broken line, we can see from the partial plot that all the continuous covariates look reasonably linear.
+
+
+## **Question 3** ##
+
+### (a)
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Generate a sequence of values for u
+u <- seq(-6, 6, by = 0.1) 
+
+# Define pdf function and create values based on it
+pdf <- function(u) {exp(-u) / (1 + exp(-u))^2}
+pdf_values <- pdf(u)
+
+# Plot the PDF
+plot(u, pdf_values, type = "l", col = "orange", lwd = 2, xlab = "u", ylab = "PDF", 
+     main = "PDF of Standard Logistic Distribution")
+```
+
+Let $$u(x) = \frac{c(x)}{d(x)} = F_{\epsilon}(u) = \frac{1}{1+e^{-u}}$$
+$$c(x) = 1$$
+$$d(x) = 1+e^{-u}$$
+According to the quotient rule, 
+$$u'(x) = \frac{c'(x)d(x)-c(x)d'(x)}{(d(x))^2}$$
+Therefore, the PDF of the standard logistic distribution:
+$$f_{\epsilon_i}(u) = u'(x) = \frac{c'(x)d(x)-c(x)d'(x)}{(d(x))^2} = \frac{0*(1+e^{-u})-1*(-e^{-u})}{(1+e^{-u})^2}
+= \frac{e^{-u}}{(1+e^{-u})^2}$$
+
+<br>
+
+
+### (b)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Define pdf function and create values based on it
+pdf_new <- function(u) {exp(u) / (1 + exp(u))^2}
+new_values <- pdf_new(u)
+
+# Plot the PDF
+par(mfrow = c(1,2))
+plot(u, pdf_values, type = "l", col = "orange", lwd = 2, xlab = "u", ylab = "PDF", main = "f(u)")
+
+plot(u, new_values, type = "l", col = "green", lwd = 2, xlab = "u", ylab = "PDF", main = "f(-u)")
+```
+Based on the pdf plots as shown above:
+$$f(u) = \frac{e^{-u}}{(1+e^{-u})^2} = \frac{e^{u}}{(1+e^{u})^2} = f(-u)$$
+As a result, we can conclude that the PDF of the logistic distribution is an even function, which is symmetric about 0.
+
+<br>
+
+### (c)
+Based on question 3(a), the CDF of $\epsilon_i$ is $P(\epsilon_i\leq u)=\frac{1}{1+e^{-u}}$. Therefore,
+$$ P(Y_i=1|X_i=x_i,\beta) = P(x_i^T\beta+\epsilon_i\geq0|X_i=x_i,\beta) = P(\epsilon_i\geq -x_i^T\beta|X_i=x_i,\beta) $$
+Due to symmetry, it equals to its cumulative distribution function as shown in (a):
+$$ P(Y_i=1|X_i=x_i,\beta) = P(\epsilon_i\leq x_i^T\beta|X_i=x_i,\beta) = \frac{1}{1+e^{-x_i^T\beta}} $$
+
+
+### (d)
+
+According to equation (1), since $Y_i$ is either 0 or 1, it follows a Bernoulli distribution. By equation (2), we can define that $p_i$ is the probability of $Y_i$ being 1, which is equal to $\frac{1}{1+e^{-x_i^T\beta}}$.  
+
+<br>
+
+Therefore, we can define a Generalized Linear Model with logit link based on (1) and (2):
+
+$$Y_i \sim \text{Bernoulli }(\frac{1}{1+e^{-x_i^T\beta}}) \qquad     i=1,...,n$$
+$$logit(p_i) = ln\frac{p_i}{1-p_i} = x_i^T\beta $$
+
+### (e)
+
+Since $\epsilon_i$ follows a standard normal distribution, $P(\epsilon\leq u)=\Phi(u)$ and:
+$$P(Y_i=1|X_i=x_i,\beta) = P(x_i^T\beta+\epsilon_i\geq0|X_i=x_i,\beta) = P(\epsilon_i\geq -x_i^T\beta|X_i=x_i,\beta)=P(\epsilon_i\leq x_i^T\beta|X_i=x_i,\beta)$$
+
+Thus, $P(Y_i=1|X_i=x_i,\beta)$ will be the cumulative distribution function of the standard normal distribution:
+$$ P(Y_i=1|X_i=x_i,\beta) = \Phi(x_i^T\beta) $$
+where $\Phi$ is the cumulative distribution function of the normal distribution.
+
+
+### (f)
+
+From the result of part (e), we can see that the probability of $Y_i$ being 1 is equal to the cumulative distribution function of the standard normal distribution.
+
+<br>
+
+Hence, we can specify a generalized linear model with probit link function:
+
+$$Y_i \sim \text{Bernoulli }(\Phi(x_i^T\beta)) \qquad    i=1,...,n $$
+$$ probit(p_i) = \Phi^{-1}(p_i) = x_i^T\beta $$
+where $\Phi^{-1}$ is the inverse of the standard normal cumulative distribution function.
