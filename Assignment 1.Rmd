@@ -1,0 +1,318 @@
+---
+title: "STAT8111 Assignment 1"
+author: "Hsin-Wen Lin"
+date: "2023-08-18"
+output: pdf_document
+---
+
+## Question 1
+
+### a.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(ISwR)
+data(cystfibr)
+# Remove height and tlc features from dataset
+cystfibr <- subset(cystfibr, select = -c(height, tlc))
+
+library(GGally)
+# Visualize the correlation between variables
+ggpairs(cystfibr)
+```
+We can see from the correlation plot that there appear to be positive linear relationships between:  
+
+- pemax and age (0.613)  
+
+- pemax and weight (0.635)  
+
+- pemax and bmp (0.23)  
+
+- pemax and fev1 (0.453)  
+where the age and weight have a strong linear relationship with the response variable.  
+  
+By contrast, there appear to be negative linear relationships between:  
+
+- pemax and sex (-0.289)  
+
+- pemax and rv (-0.316)  
+
+- pemax and frc (-0.417)
+
+Additionally, there is a strong relationship between covariates, including age with weight and frc, weight with bmp, rv and frc, fev1 with rv and frc, and rv with frc. Therefore, there might exist multicollinearity problems.
+
+### b.
+```{r echo=TRUE, warning=FALSE}
+# Create model1 with pemax as the response variable and weight as the covariate
+model1 <- lm(pemax ~ weight, data = cystfibr)
+summary(model1)
+
+# Visualize the fitted model
+ggplot(cystfibr, aes(x = weight, y = pemax)) + geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Figure 1: The fitted line in model 1")
+```
+We specify the model:  
+$$ Y_i = \beta_0 + \beta_1 x_i + \epsilon_i $$
+where  
+$Y_i$ = the maximum expiratory pressure of $i$th patient  
+$x_i$ = weight of $i$th patient  
+$\epsilon_i$ = the error term for the $i$th patient  
+
+<br>
+This model is under two assumptions:  
+
+- Distributional assumption: The error term for each observation follows the normal distribution, and the variance of the residuals is constant.  
+
+- Linearity assumption: The relationship between the independent and dependent variables is linear.  
+
+We can see from the model output that R2 = 0.4035. This means that the model explains 40.35% of the variation in pemax, which is not good enough. In addition, it can be seen in Figure 1 that a linear relationship does not well capture the observed relationship.    
+
+<br>
+According to the R output:  
+$$\hat{\beta}_0 \ = 63.5456$$ 
+$$\hat{\beta}_1 \ = 1.1867$$   
+which means the effect of an increase in weight of one kilogram is an increase in expected maximum expiratory pressure of 1.1867 cmH2O (Centimeters of Water).
+
+
+```{r echo=TRUE, warning=FALSE}
+# Diagnostic plots of model 1
+par(mfrow = c(3, 2))
+plot(model1, which = 1:6)
+```
+The left top plot shows that the residuals are said to be heteroscedastic, and the normal scores plot (top right) indicates that most of the $\hat\epsilon_i$ follow the line, indicating that this data is normally distributed. However, since it is a small dataset, we cannot conclude based on the normal scores plot.
+
+<br>
+For the bottom two plots, the cutoff for $h_i$ is $\frac{2p}{n} = \frac{4}{25} = 0.16$ due to p = 2 (intercept + 1 weight parameter). Therefore, the plots indicate that observation number 25 has a large leverage. By checking the data in the dataset, we find that he is the heaviest person, which might be the outlier or influential data in this model.  
+
+<br>
+In addition, the Cook’s distances plot shows that there is no $C_i$ near the cutoff of 1. As a result, although there was some potentially influential cases, none was significant in the model fit.  
+
+
+### c.
+```{r echo=TRUE, warning=FALSE}
+# Build model2 with sex variable without interaction
+model2 <- lm(pemax ~ weight + factor(sex), data = cystfibr)
+summary(model2)
+
+# Build model3 with sex variable with interaction
+model3 <- lm(pemax ~ weight * factor(sex), data = cystfibr)
+summary(model3)
+```
+We specify model 2:  
+$$ Y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \epsilon_i $$
+
+We specify model 3:  
+$$ Y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_{12} x_{i,12} + \epsilon_i $$
+where  
+$Y_i$ = the maximum expiratory pressure of $i$th patient  
+$x_{i1}$ = weight of $i$th patient    
+\[
+x_{i2} = \begin{cases}
+    0 & \text{if patient $i$ is male} \\
+    1 & \text{if patient $i$ is female}
+\end{cases}
+\]   
+$x_{i,12}$ = $x_{i1}x_{i2}$
+$\epsilon_i$ = the error term for the $i$th patient   
+
+The model estimates of model 2 are 
+$$ \hat y_i = 70.9719 + 1.1248  x_{i1} - 11.4776 x_{i2} $$
+
+The model estimates of model 3 are  
+$$ \hat y_i = 61.3603 + 1.3572  x_{i1} + 22.0905 x_{i2} - 0.9240 x_{i,12} $$
+
+* When $x_{i2} = 0$ (sex = male):  
+
+$$ \hat y_i = 61.3603 + 1.3572  x_{i1} $$
+The effect of an increase in weight of one kilogram is an increase in expected maximum expiratory pressure of 1.3572 cmH2O when sex is male.
+
+* When $x_{i2} = 1$ (sex = female):  
+
+$$ \hat y_i = 61.3603 + 1.3572  x_{i1} + 22.0905 - 0.9240 x_{i1} = 83.4508 + 0.4332 x_{i1} $$    
+The effect of an increase in weight of one kilogram is an increase in expected maximum expiratory pressure of 0.4332 cmH2O when sex is female.
+
+```{r echo=TRUE, warning=FALSE}
+p2 <- cystfibr %>% ggplot() + geom_point(aes(x = weight, y = pemax)) + 
+  geom_line(aes(x = weight, y = fitted(model2), colour = factor(sex))) +
+  ggtitle("Figure 2: The fitted line in model 2 with sex variable without interaction")
+p2
+
+p3 <- cystfibr %>% ggplot() + geom_point(aes(x = weight, y = pemax)) + 
+  geom_line(aes(x = weight, y = fitted(model3), colour = factor(sex))) +
+  ggtitle("Figure 3: The fitted line in model 3 with sex variable with interaction")
+p3
+
+```
+We can see from Figure 2 that the impact of different sex cause the same effect on the relationship between pemax and weight since the slope of the two lines are the same. On the other hand, Figure 3 shows that there appears to be a positive relationship between weight and pemax for both males and females, indicating that the maximum expiratory pressure increases while weight increases. However, females are more influential in this model compared to males. 
+  
+<br>
+Overall, it can be seen from the p-value in models 2 and 3 that the variable of sex and the interaction of weight and sex are not significant, indicating that sex might not be influential on the dependent variable. Therefore, I will remove the sex variable instead of keeping it in the model and choose the model from question b, which only includes weight as the independent variable.  
+
+### d.
+```{r echo=TRUE, warning=FALSE}
+# Build a model included all variables
+model4 <- lm(pemax ~ ., data = cystfibr)
+
+# Perform backward selection using the step function
+backward <- step(model4, direction = "backward")
+
+# Build model5 with variables selected by the step function
+model5 <- lm(pemax ~ rv + bmp + fev1 + weight, data = cystfibr)
+summary(model5)
+```
+The step function iteratively removes the least significant explanatory variables based on the AIC (Akaike Information Criterion) value until the minimum AIC value. Hence, we can see that the final model is built by four explanatory variables: weight, bmp, fev1, and rv, with an AIC value of 160.66. Additionally, R-squared = 0.6141 means that the model explains 61.41% of the variation in pemax, which is better than model 1.
+
+
+```{r echo=TRUE, warning=FALSE}
+# Diagnostic plots of model 5
+par(mfrow = c(3, 2))
+plot(model5, which = 1:6)
+```
+According to the diagnostic plots, we can see that although the variance of residuals is not constant, indicating heteroscedasticity, it is slightly better than model 1. Also, most of the residuals follow the straight line in the Normal Q-Q plot, so we can conclude that the data is normally distributed. 
+
+The Cook’s distances plot shows that there is no $C_i$ near the cutoff of 1, so none of the data points is significant in the model fit.
+
+Lastly, the cutoff for $h_i$ is $\frac{2p}{n}$ for the bottom two plots. Since p = 5 (intercept + 4 parameters), the cutoff is $\frac{10}{25} = 0.4$. Therefore, the plots indicate that only one observation has a large leverage.
+
+
+<br>
+The final model equation:
+$$ Y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3 x_{i3} + \beta_4 x_{i4}$$
+where  
+$Y_i$ = the maximum expiratory pressure of $i$th patient    
+$x_{i1}$ = residual volume of $i$th patient   
+$x_{i2}$ = body mass (% of normal) of $i$th patient   
+$x_{i3}$ = forced expiratory volume of $i$th patient   
+$x_{i4}$ = weight of $i$th patient   
+
+
+<br>
+According to the R output:  
+$\hat{\beta}_0 \ = 63.94669$
+
+<br>
+$\hat{\beta}_1 \ = 0.12572$    
+
+<br>
+$\hat{\beta}_2 \ = -1.37724$      
+
+<br>
+$\hat{\beta}_3 \ = 1.54770$     
+
+<br>
+$\hat{\beta}_4 \ = 1.74891$     
+
+<br>
+which means that:  
+
+- The effect of an increase in residual volume of one milliliters is an increase in expected maximum expiratory pressure of 0.12572 cmH2O.
+
+- The effect of an increase in body mass of 1% is a decrease in expected maximum expiratory pressure of 1.37724 cmH2O.
+
+- The effect of an increase in forced expiratory volume of one milliliters is an increase in expected maximum expiratory pressure of 1.54770 cmH2O.
+
+- The effect of an increase in weight of one kilogram is an increase in expected maximum expiratory pressure of 1.74891 cmH2O.
+
+## Question 2
+
+### a.
+
+$$ 
+\begin{aligned}
+f(x;\mu,\gamma) = \sqrt{\frac{\gamma}{2\pi x^3}} \exp\left(-\frac{\gamma(x-\mu)^2}{2\mu^2 x}\right)  \\
+= \exp\left(log(\frac{\gamma}{2\pi x^3})^\frac{1}{2} - \frac{\gamma (x^2 -2\mu x + \mu ^2)}{2\mu^2x} \right)  \\
+= \exp\left(\frac{1}{2}(log\gamma - log(2\pi x^3)) - \frac{\gamma (x^2 -2\mu x + \mu ^2)}{2\mu^2x} \right)  \\
+= \exp\left(\frac{1}{2}log\gamma - \frac{1}{2}log(2\pi x^3) - \frac{\gamma}{2\mu^2}x + \frac{\gamma}{\mu} - \frac{\gamma}{2x}) \right)  \\
+= \exp\left(\frac{\theta x}{-2\phi} + \frac{\theta^\frac{1}{2}}{\phi} - \frac{1}{2}log\phi - \frac{1}{2}log(2\pi x^3) \right)  \\
+= \exp\left(\frac{\theta x - 2\theta^\frac{1}{2}}{-2\phi} - \frac{1}{2\phi x} - \frac{1}{2}log(2\pi \phi x^3) \right) \\
+= \exp\left(\frac{\theta x - 2\theta^\frac{1}{2}}{-2\phi} - \frac{1}{2}(\frac{1}{\phi x} + log(2\pi \phi x^3)) \right)
+\end{aligned}  
+$$
+
+where
+$$ \theta=\frac{1}{\mu^2} $$
+$$ b(\theta)=2\theta^\frac{1}{2} $$
+$$ \phi=\frac{1}{\gamma}  $$
+$$ w=-\frac{1}{2}$$
+$$ a(\phi)=-\frac{2}{\gamma} $$
+$$ c(x, \phi) = - \frac{1}{2}(\frac{1}{\phi x} + log(2\pi \phi x^3))$$
+
+
+### b.
+
+The natural and the scale parameter:
+$$ \theta=\frac{1}{\mu^2} $$
+$$ \phi=\frac{1}{\gamma}  $$
+
+### c.
+
+$$ E(x) = b'(\theta) = 2*\frac{1}{2}*\theta ^{(\frac{1}{2}-1)} = \theta^\frac{-1}{2} = \frac{1}{\theta^\frac{1}{2}} = \mu $$
+$$ Var(x) = b''(\theta)a(\phi) = -\frac{1}{2}\theta^{(-\frac{1}{2}-1)} * \frac{-2}{\gamma} = \theta^\frac{-3}{2} = \frac{\mu^3}{\gamma} $$
+
+## Question 3
+
+### a.
+The likelihood function for $x_i$ and $y_i$:
+$$ L(y_i | \beta, x_i)= \frac{1}{\sqrt(2\pi \sigma^2)}exp(-\frac{(y_i-x_i^T\beta)^2}{2\sigma^2}) $$
+The likelihood function of $X$ and $Y$:
+$$ L(Y| \beta,X)= \prod_{i=1}^{n} \frac{1}{\sqrt(2\pi \sigma^2)}exp(-\frac{(y_i-x_i^T\beta)^2}{2\sigma^2}) $$
+Since maximizing the log-likelihood function is the same as maximizing the likelihood function, so, to get the maximum likelihood estimator of the $\beta$, I maximize the log-likelihood function as follows:
+
+$$ 
+\begin{aligned}
+lnL(Y| \beta,X)= ln(\prod_{i=1}^{n}\frac{1}{\sqrt(2\pi \sigma^2)}exp(-\frac{(y_i-x_i^T\beta)^2}{2\sigma^2}))  \\
+= ln(\frac{1}{\sqrt(2\pi \sigma^2)})^n - \frac{\sum_{i=1}^{n}(y_i-x_i^T\beta)^2}{2\sigma^2}  \\
+=-\frac{n}{2}ln(2\pi\sigma^2)-\frac{1}{2\sigma^2}\sum_{i=1}^{n}(y_i-x_i^T\beta)^2
+\end{aligned}
+$$
+According to the function above, since $-\frac{n}{2}ln(2\pi\sigma^2)$ is a scalar, we can maximize the log-likelihood function by minimizing $\sum_{i=1}^{n}(y_i-x_i^T\beta)^2$, which is the same solution in the least square error(LS) defined in the question.
+
+### b.
+The likelihood function for $x_i$ and $y_i$::
+$$L(y_i | \beta, x_i) = \frac{1}{2\sigma}e^{(-\frac{|y_i-x_i^T\beta|}{\sigma})} $$
+
+
+The likelihood function of $X$ and $Y$:
+$$ L(Y| \beta,X) = \prod_{i=1}^{n} \frac{1}{2\sigma}e^{(-\frac{|y_i-x_i^T\beta|}{\sigma})}   $$
+
+The lod-likelihood of $X$ and $Y$:
+$$
+\begin{aligned}
+ln L(Y| \beta,X) = ln(\prod_{i=1}^{n} \frac{1}{2\sigma}e^{(-\frac{|y_i-x_i^T\beta|}{\sigma})}) \\
+= ln((\frac{1}{2\sigma})^n)\sum_{i=1}^{n}{(-\frac{|y_i-x_i^T\beta|}{\sigma})})  \\
+= -n*ln(2\sigma)-\frac{1}{\sigma}\sum_{i=1}^{n}|y_i-x_i^T\beta|
+\end{aligned}
+$$
+Based on the log-likelihood function derived above, due to the minus sign, we can maximize the log-likelihood function by minimizing $\sum_{i=1}^{n}|y_i-x_i^T\beta|$, which is the same as the solution in the absolute error loss(AL).
+
+
+### c.
+```{r echo=TRUE, warning=FALSE}
+library(ggplot2)
+# Define the value of mean and variance
+mean <- 0
+var <- 1
+
+# Generate random 1000 x values in the range from -6 to 6
+x <- seq(-6, 6, length.out = 1000)
+
+# Define pdf of the Normal distribution with mean=0, variance=1
+normal <- dnorm(x, mean = mean, sd = var)
+
+# Define pdf of the Laplace distribution with mean=0, variance=1
+laplace <- 1 / (2 * sqrt(var)) * exp(-abs(x - mean) / sqrt(var))
+
+# Create a data frame with two distribution
+df <- data.frame(x = x, pdf_normal = normal, pdf_laplace = laplace)
+
+# Visualize the result
+ggplot(df, aes(x)) + geom_line(aes(y = normal, color = "Normal")) +
+  geom_line(aes(y = laplace, color = "Laplace")) +
+  labs(title = "The pdf of the Normal and Laplace Distribution",
+       x = "x", y = "Probability Density")
+```
+
+
+### d.
+We can see from the previous plot that, in contrast to the Normal distribution, the Laplace distribution has heavier tails, indicating that it assigns higher probabilities to large noise values, which are outliers. Hence, we can conclude that the linear model using Laplace error noise is more robust to outliers.
+
+
